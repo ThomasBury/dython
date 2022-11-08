@@ -1478,6 +1478,182 @@ def association_matrix(
 
 
 
+def _callable_association_series_fn(
+    assoc_fn: Callable,
+    X: pd.DataFrame,
+    target: Union[str, int],
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    n_jobs: int = -1,
+    kind: str = "nom-nom",
+):
+    """_callable_association_series_fn private function, utility for computing association series
+    for a callable custom association
+
+    Parameters
+    ----------
+    assoc_fn :
+        callable, a function which receives two `pd.Series` (and optionally a weight array) and returns a single number
+    X :
+        predictor dataframe
+    target :
+        the predictor name or index with which to compute association
+    sample_weight :
+        sample weight, if any (e.g. exposure)
+    n_jobs :
+        the number of cores to use for the computation
+    kind :
+        kind of association, either 'num-num' or 'nom-nom' or 'nom-num'
+
+    Returns
+    -------
+    pd.Series
+        the association series
+
+    Raises
+    ------
+    ValueError
+        if kind is not 'num-num' or 'nom-nom' or 'nom-num'
+    """
+
+    if kind == "nom-nom":
+        if X.loc[:, target].dtypes not in ["object", "category"]:
+            raise TypeError("the target column is not categorical")
+        nom_cols = list(X.select_dtypes(include=["object", "category"]))
+        if nom_cols:
+            # define the number of cores
+            n_jobs = (
+                min(cpu_count(), len(nom_cols))
+                if n_jobs == -1
+                else min(cpu_count(), n_jobs)
+            )
+            # parallelize jobs
+            _assoc_fn = partial(_compute_series, func_xyw=assoc_fn)
+            return parallel_df(
+                func=_assoc_fn,
+                df=X[nom_cols],
+                series=X[target],
+                sample_weight=sample_weight,
+                n_jobs=n_jobs,
+            )
+        else:
+            return None
+
+    elif kind == "nom-num":
+        if X.loc[:, target].dtypes in ["object", "category"]:
+            # if the target is categorical, pick only num predictors
+            pred_list = list(X.select_dtypes(include=[np.number]))
+        else:
+            # if the target is numerical, the 2nd pred should be categorical
+            pred_list = list(X.select_dtypes(include=["object", "category"]))
+
+        if pred_list:
+            # define the number of cores
+            n_jobs = (
+                min(cpu_count(), len(pred_list))
+                if n_jobs == -1
+                else min(cpu_count(), n_jobs)
+            )
+            # parallelize jobs
+            _assoc_fn = partial(_compute_series, func_xyw=assoc_fn)
+            return parallel_df(
+                func=_assoc_fn,
+                df=X[pred_list],
+                series=X[target],
+                sample_weight=sample_weight,
+                n_jobs=n_jobs,
+            )
+        else:
+            return None
+
+    elif kind == "num-num":
+        num_cols = list(X.select_dtypes(include=[np.number]))
+        if num_cols:
+            # parallelize jobs
+            _assoc_fn = partial(_compute_series, func_xyw=assoc_fn)
+            return parallel_df(
+                func=_assoc_fn,
+                df=X[num_cols],
+                series=X[target],
+                sample_weight=sample_weight,
+                n_jobs=n_jobs,
+            )
+        else:
+            return None
+    else:
+        raise ValueError("kind can be 'num-num' or 'nom-num' or 'nom-nom'")
+
+
+def _callable_association_matrix_fn(
+    assoc_fn: Callable,
+    X: pd.DataFrame,
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    n_jobs: int = -1,
+    kind: str = "nom-nom",
+    cols_comb: Optional[List[Tuple[str]]] = None,
+):
+    """_callable_association_matrix_fn private function, utility for computing association matrix
+    for a callable custom association
+
+    Parameters
+    ----------
+    assoc_fn :
+        callable, a function which receives two `pd.Series` (and optionally a weight array) and returns a single number
+    X :
+        predictor dataframe
+    sample_weight :
+        sample weight, if any (e.g. exposure)
+    n_jobs :
+        the number of cores to use for the computation
+    kind :
+        kind of association, either 'num-num' or 'nom-nom' or 'nom-num'
+    cols_comb :
+        combination of column names (list of 2-uples of strings)
+
+    Returns
+    -------
+    pd.DataFrame
+        the association matrix
+    """
+
+    if cols_comb is None:
+        if kind == "num-num":
+            selected_cols = list(X.select_dtypes(include=[np.number]))
+        elif kind == "nom-nom":
+            selected_cols = list(X.select_dtypes(include=["object", "category"]))
+        elif kind == "nom-num":
+            cat_cols = list(X.select_dtypes(include=["object", "category"]))
+            num_cols = list(X.select_dtypes(include=[np.number]))
+            if cat_cols and num_cols:
+                # explicitely store the unique 2-combinations of column names
+                # the first one should be the categorical predictor
+                selected_cols = list(product(cat_cols, num_cols))
+        else:
+            selected_cols = None
+
+        if selected_cols:
+            # explicitely store the unique 2-combinations of column names
+            cols_comb = [comb for comb in combinations(selected_cols, 2)]
+            _assoc_fn = partial(_compute_matrix_entries, func_xyw=assoc_fn)
+            assoc = parallel_matrix_entries(
+                func=_assoc_fn,
+                df=X,
+                comb_list=cols_comb,
+                sample_weight=sample_weight,
+                n_jobs=n_jobs,
+            )
+
+        else:
+            assoc = None
+    else:
+        _assoc_fn = partial(_compute_matrix_entries, func_xyw=assoc_fn)
+        assoc = parallel_matrix_entries(
+            func=_assoc_fn,
+            df=X,
+            comb_list=cols_comb,
+            sample_weight=sample_weight,
+            n_jobs=n_jobs,
+        )
+    return assoc
 
 
 

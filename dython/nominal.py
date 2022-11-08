@@ -342,6 +342,133 @@ def weighted_theils_u(
     else:
         return teil_u_val
 
+def theils_u_matrix(
+    X: Union[pd.DataFrame, np.ndarray],
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    n_jobs: int = -1,
+    handle_na: Optional[str] = "drop",
+):
+    """theils_u_matrix computes the weighted Theil's U statistic for
+    categorical-categorical association. This is an asymmetric coefficient: U(x,y) != U(y,x)
+    U(x, y) means the uncertainty of x given y: value is on the range of [0,1] -
+    where 0 means y provides no information about x, and 1 means y provides full information about x
+
+    The computation is embarrassingly parallel and is distributed on available cores.
+    Moreover, the statistic is computed for the unique combinations only and returned in a
+    tidy (long) format.
+
+    Parameters
+    ----------
+    X :
+        predictor dataframe
+    sample_weight :
+        sample weight, if any (e.g. exposure)
+    n_jobs :
+        the number of cores to use for the computation
+    handle_na :
+        either drop rows with na, fill na with 0 or do nothing
+
+    Returns
+    -------
+    pd.DataFrame
+        The Theil's U matrix in a tidy (long) format.
+    """
+    # sanity checks
+    X, sample_weight = _check_association_input(X, sample_weight, handle_na)
+
+    # Cramer's V only for categorical columns
+    # in GLM supposed to be all the columns
+    cat_cols = list(X.select_dtypes(include=["object", "category"]))
+
+    if cat_cols:
+        # explicitely store the unique 2-permutation of column names
+        # permutations and not combinations because U is asymmetric
+        comb_list = [comb for comb in permutations(cat_cols, 2)]
+        # define the number of cores
+        n_jobs = (
+            min(cpu_count(), len(cat_cols))
+            if n_jobs == -1
+            else min(cpu_count(), n_jobs)
+        )
+        # parallelize jobs
+        theil_u_matrix_entries = partial(
+            _compute_matrix_entries, func_xyw=weighted_theils_u
+        )
+        lst = parallel_matrix_entries(
+            func=theil_u_matrix_entries,
+            df=X,
+            comb_list=comb_list,
+            sample_weight=sample_weight,
+            n_jobs=-1,
+        )
+        return lst
+    else:
+        return None
+
+
+def theils_u_series(
+    X: Union[pd.DataFrame, np.ndarray],
+    target: Union[str, int],
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    n_jobs: int = -1,
+    handle_na: Optional[str] = "drop",
+):
+    """theils_u_series computes the weighted Theil's U statistic for
+    categorical-categorical association. This is an asymmetric coefficient: U(x,y) != U(y,x)
+    U(x, y) means the uncertainty of x given y: value is on the range of [0,1] -
+    where 0 means y provides no information about x, and 1 means y provides full information about x
+
+    The computation is embarrassingly parallel and is distributed on available cores.
+    Moreover, the statistic is computed for the unique combinations only and returned in a
+    tidy (long) format.
+
+    Parameters
+    ----------
+    X :
+        predictor dataframe
+    target :
+        the predictor name or index with which to compute association
+    sample_weight :
+        sample weight, if any (e.g. exposure)
+    n_jobs :
+        the number of cores to use for the computation
+    handle_na :
+        either drop rows with na, fill na with 0 or do nothing
+
+    Returns
+    -------
+    pd.Series
+        The Theil's U series.
+    """
+    # sanity checks
+    X, sample_weight = _check_association_input(X, sample_weight, handle_na)
+
+    if X.loc[:, target].dtypes not in ["object", "category"]:
+        raise TypeError("the target column is not categorical")
+
+    # Cramer's V only for categorical columns
+    # in GLM supposed to be all the columns
+    cat_cols = list(X.select_dtypes(include=["object", "category"]))
+
+    if cat_cols:
+        # define the number of cores
+        n_jobs = (
+            min(cpu_count(), len(cat_cols))
+            if n_jobs == -1
+            else min(cpu_count(), n_jobs)
+        )
+        # parallelize jobs
+        _theil_u = partial(_compute_series, func_xyw=weighted_theils_u)
+        lst = parallel_df(
+            func=_theil_u,
+            df=X[cat_cols],
+            series=X[target],
+            sample_weight=sample_weight,
+            n_jobs=n_jobs,
+        )
+        return lst
+    else:
+        return None
 
 
 

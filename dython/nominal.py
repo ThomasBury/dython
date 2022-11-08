@@ -860,7 +860,148 @@ def correlation_ratio_series(
     else:
         return None
 
+def wm(x: np.array, w: np.array):
+    """wm computes the weighted mean
 
+    Parameters
+    ----------
+    x :
+        the target array
+    w :
+        the sample weights array
+
+    Returns
+    -------
+    float
+        weighted mean
+    """
+    return np.sum(x * w) / np.sum(w)
+
+
+def wcov(x, y, w):
+    """wcov computes the weighted covariance
+
+    Parameters
+    ----------
+    x :
+        variable 1 array
+    y :
+        variable 2 array
+    w :
+        the sample weights array
+
+    Returns
+    -------
+    float
+        weighted covariance
+    """
+    return np.sum(w * (x - wm(x, w)) * (y - wm(y, w))) / np.sum(w)
+
+
+def wcorr(x, y, w):
+    """wcov computes the weighted Pearson correlation coefficient
+
+    Parameters
+    ----------
+    x :
+        variable 1 array
+    y :
+        variable 2 array
+    w :
+        the sample weights array
+
+    Returns
+    -------
+    float
+        weighted correlation coefficient
+    """
+    return wcov(x, y, w) / np.sqrt(wcov(x, x, w) * wcov(y, y, w))
+
+
+def wrank(x, w):
+    """wrank computes the weighted rank
+
+    Parameters
+    ----------
+    x :
+        the target array
+    w :
+        the sample weights array
+
+    Returns
+    -------
+    float
+        weighted rank
+    """
+    (unique, arr_inv, counts) = np.unique(
+        rankdata(x), return_counts=True, return_inverse=True
+    )
+    a = np.bincount(arr_inv, w)
+    return (np.cumsum(a) - a)[arr_inv] + ((counts + 1) / 2 * (a / counts))[arr_inv]
+
+
+def wspearman(x, y, w):
+    """wcov computes the weighted Spearman correlation coefficient
+
+    Parameters
+    ----------
+    x :
+        variable 1 array
+    y :
+        variable 2 array
+    w :
+        the sample weights array
+
+    Returns
+    -------
+    float
+        Spearman weighted correlation coefficient
+    """
+    return wcorr(wrank(x, w), wrank(y, w), w)
+
+
+def weighted_corr(
+    x: Union[pd.Series, np.array],
+    y: Union[pd.Series, np.array],
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    as_frame: bool = False,
+    method: str = "pearson",
+):
+    """weighted_corr computes the weighted correlation coefficient (Pearson or Spearman)
+
+
+    Parameters
+    ----------
+    x :
+        variable 1 array/series
+    y :
+        variable 2 array/series
+    sample_weight :
+        the sample weights array
+    as_frame :
+        return the result as a single row dataframe, convenience for the parallelization
+    method :
+        type of correlation, by default "pearson"
+
+    Returns
+    -------
+    float or pd.DataFrame
+        weighted correlation coefficient
+    """
+
+    if method == "pearson":
+        c = wcorr(x, y, sample_weight)
+    else:
+        c = wspearman(x, y, sample_weight)
+
+    if as_frame:
+        x_name = x.name if isinstance(x, pd.Series) else "var"
+        y_name = y.name if isinstance(y, pd.Series) else "target"
+        return pd.DataFrame(
+            {"row": [x_name, y_name], "col": [y_name, x_name], "val": [c, c]}
+        )
+    else:
+        return c
 
 
 

@@ -1004,6 +1004,200 @@ def weighted_corr(
         return c
 
 
+def wcorr_series(
+    X: Union[pd.DataFrame, np.ndarray],
+    target: Union[str, int],
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    n_jobs: int = -1,
+    handle_na: Optional[str] = "drop",
+    method: str = "pearson",
+):
+    """wcorr_series computes the weighted correlation coefficient (Pearson or Spearman) for
+    continuous-continuous association. This is an symmetric coefficient: corr(x,y) = corr(y,x)
+
+    The computation is embarrassingly parallel and is distributed on available cores.
+    Moreover, the statistic is computed for the unique combinations only and returned in a
+    tidy (long) format.
+
+    Parameters
+    ----------
+    X :
+        predictor dataframe
+    target :
+        the predictor name or index with which to compute association
+    sample_weight :
+        sample weight, if any (e.g. exposure)
+    n_jobs :
+        the number of cores to use for the computation
+    handle_na :
+        either drop rows with na, fill na with 0 or do nothing
+    method :
+        either "spearman" or "pearson"
+
+    Returns
+    -------
+    pd.Series
+        The Theil's U series.
+    """
+    # sanity checks
+    X, sample_weight = _check_association_input(X, sample_weight, handle_na)
+
+    if X.loc[:, target].dtypes in ["object", "category"]:
+        raise TypeError("the target column is categorical")
+
+    num_cols = list(X.select_dtypes(include=[np.number]))
+    y = X[target]
+
+    if num_cols:
+        _wcorr_method = partial(weighted_corr, method=method)
+        # parallelize jobs
+        _wcorr_method_series = partial(_compute_series, func_xyw=_wcorr_method)
+        return parallel_df(
+            func=_wcorr_method_series,
+            df=X[num_cols],
+            series=y,
+            sample_weight=sample_weight,
+            n_jobs=n_jobs,
+        )
+    else:
+        return None
+
+
+def wcorr_matrix(
+    X: Union[pd.DataFrame, np.ndarray],
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    n_jobs: int = -1,
+    handle_na: Optional[str] = "drop",
+    method: str = "pearson",
+):
+    """wcorr_matrix computes the weighted correlation statistic for
+    (Pearson or Spearman) for continuous-continuous association.
+    This is an symmetric coefficient: corr(x,y) = corr(y,x)
+
+    The computation is embarrassingly parallel and is distributed on available cores.
+    Moreover, the statistic is computed for the unique combinations only and returned in a
+    tidy (long) format.
+
+    Parameters
+    ----------
+    X :
+        predictor dataframe
+    sample_weight :
+        sample weight, if any (e.g. exposure)
+    n_jobs :
+        the number of cores to use for the computation
+    handle_na :
+        either drop rows with na, fill na with 0 or do nothing
+    method :
+        either "spearman" or "pearson"
+
+    Returns
+    -------
+    pd.DataFrame
+        The Cramer's V matrix (lower triangular) in a tidy (long) format.
+    """
+    # sanity checks
+    X, sample_weight = _check_association_input(X, sample_weight, handle_na)
+    num_cols = list(X.select_dtypes(include=[np.number]))
+    if num_cols:
+        # explicitely store the unique 2-combinations of column names
+        comb_list = [comb for comb in combinations(num_cols, 2)]
+        # define the number of cores
+        n_jobs = (
+            min(cpu_count(), len(num_cols))
+            if n_jobs == -1
+            else min(cpu_count(), n_jobs)
+        )
+
+        if (n_jobs > 1) or (method != "pearson"):
+            _wcorr_method = partial(weighted_corr, method=method)
+            _wcorr_method_entries = partial(
+                _compute_matrix_entries, func_xyw=_wcorr_method
+            )
+            lst = parallel_matrix_entries(
+                func=_wcorr_method_entries,
+                df=X,
+                comb_list=comb_list,
+                sample_weight=sample_weight,
+                n_jobs=-1,
+            )
+            return lst
+        else:
+            return weighted_correlation_1cpu(X, sample_weight, handle_na)
+
+    else:
+        return None
+
+
+def weighted_correlation_1cpu(
+    X: Union[pd.DataFrame, np.ndarray],
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    handle_na: Optional[str] = "drop",
+):
+    """weighted_correlation computes the lower triangular weighted correlation matrix
+    using a single CPU, therefore using common numpy linear algebra
+
+    Parameters
+    ----------
+    X :
+        predictor dataframe
+    sample_weight :
+        sample weight, if any (e.g. exposure)
+    handle_na :
+        either drop rows with na, fill na with 0 or do nothing
+
+    Returns
+    -------
+    pd.DataFrame
+        the lower triangular weighted correlation matrix in long format
+    """
+    # sanity checks
+    X, sample_weight = _check_association_input(X, sample_weight, handle_na)
+    sample_weight = sample_weight.values.ravel()
+    # degree of freedom for the second moment estimator
+    ddof = 1
+    numeric_cols = list(X.select_dtypes(include=[np.number]))
+
+    if numeric_cols:
+        data = X[numeric_cols]
+        col_idx = data.columns
+        sum_weights = sample_weight.sum()
+        weighted_sum = np.dot(data.T, sample_weight)
+        weighted_mean = weighted_sum / sum_weights
+        demeaned = data - weighted_mean
+        sum_of_squares = np.dot((demeaned**2).T, sample_weight)
+        weighted_std = np.sqrt(sum_of_squares / (sum_weights - ddof))
+        weighted_cov = np.dot(sample_weight * demeaned.T, demeaned)
+        weighted_cov /= sum_weights - ddof
+        weighted_corcoef = pd.DataFrame(
+            weighted_cov / weighted_std / weighted_std[:, None],
+            index=col_idx,
+            columns=col_idx,
+        )
+        return weighted_corcoef
+    else:
+        return None
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

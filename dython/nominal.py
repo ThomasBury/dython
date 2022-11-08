@@ -2211,6 +2211,139 @@ def f_stat_classification_parallel(
     )
 
 
+############
+# Utilities
+############
+
+def _check_association_input(
+    X: pd.DataFrame,
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    handle_na: Optional[str] = "drop",
+):
+    """_check_association_input private function. Check the inputs,
+    convert X to a pd.DataFrame if needed, adds column names if non are provided.
+    Check if the sample_weight is None or of the right dimensionality and handle NA
+    according to the chosen methods (drop, fill, None).
+
+    _extended_summary_
+
+    Parameters
+    ----------
+    X :
+        The data matrix of shape (n_samples, n_features)
+    sample_weight :
+        The weight vector, if any, of shape (n_samples,)
+    handle_na :
+        either drop rows with na, fill na with 0 or do nothing
+
+    Returns
+    -------
+    tuple
+        the dataframe and the sample weights
+
+    Raises
+    ------
+    ValueError
+        if sample_weight contains NA
+    """
+
+    if not isinstance(X, pd.DataFrame):
+        X = pd.DataFrame(X, columns=[f"pred_{i}" for i in range(X.shape[1])])
+
+    # sanity checks
+    if sample_weight is None:
+        sample_weight = np.ones(len(X))
+    elif ~np.isfinite(sample_weight).all():
+        raise ValueError("sample weights contains nans or nulls")
+
+    if isinstance(sample_weight, pd.Series):
+        sample_weight = sample_weight.to_numpy()
+
+    # handle nans
+    if handle_na is None:
+        pass
+    elif handle_na == "drop":
+        # mask the na
+        na_mask = (~X.isnull().any(axis=1)).values
+        if na_mask.any():
+            X, sample_weight = X.loc[na_mask, :], sample_weight[na_mask]
+    else:
+        X = X.fillna(0)
+    return X, sample_weight
+
+
+def is_list_of_str(str_list: List[str]):
+    """Raise an exception if ``str_list`` is not a list of strings
+    Parameters
+    ----------
+    str_list :
+    name :
+         (default ``'str_list'``)
+    Raises
+    ------
+    TypeError
+        if ``str_list`` is not a ``list[str]``
+    """
+    if str_list is not None:
+        if not (
+            isinstance(str_list, list) and all(isinstance(s, str) for s in str_list)
+        ):
+            return False
+        else:
+            return True
+
+
+def matrix_to_xy(
+    df: pd.DataFrame, columns: Optional[List[str]] = None, reset_index: bool = False
+):
+    """matrix_to_xy wide to long format of the association matrix
+
+    _extended_summary_
+
+    Parameters
+    ----------
+    df :
+        the wide format of the association matrix
+    columns :
+        list of column names, by default None
+    reset_index : bool, optional
+        wether to reset_index or not, by default False
+
+    Returns
+    -------
+    pd.DataFrame
+        the long format of the association matrix
+    """
+    bool_index = np.tril(np.ones(df.shape), 0).astype(bool)
+    xy = (
+        df.where(bool_index).stack().reset_index()
+        if reset_index
+        else df.where(bool_index).stack()
+    )
+    if reset_index:
+        xy.columns = columns or ["row", "col", "val"]
+    return xy
+
+
+def xy_to_matrix(xy: pd.DataFrame):
+    """xy_to_matrix long to wide format of the association matrix
+
+    Parameters
+    ----------
+    xy :
+        the long format of the association matrix, 3 columns.
+
+    Returns
+    -------
+    pd.DataFrame
+
+    """
+    return (
+        xy.pivot(*xy.columns)
+        .fillna(0)
+        .rename_axis(None, axis=1)
+        .rename_axis(None, axis=0)
+    )
 
 
 

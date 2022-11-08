@@ -639,7 +639,101 @@ def cramer_v_series(
     else:
         return None
 
+def _weighted_correlation_ratio(*args):
+    """Calculates the Correlation Ratio (sometimes marked by the greek letter Eta)
+    for categorical-continuous association.
+    Answers the question - given a continuous value of a measurement, is it
+    possible to know which category is it associated with?
+    Value is in the range [0,1], where 0 means a category cannot be determined
+    by a continuous measurement, and 1 means a category can be determined with
+    absolute certainty.
 
+    Based on the scikit-learn implementation of the unweighted version.
+
+    Returns
+    -------
+    float
+        value of the correlation ratio
+    """
+    # how many levels (predictor)
+    n_classes = len(args)
+    # convert to float 2-uple d'array
+    args = [as_float_array(a) for a in args]
+    # compute the total weight per level
+    weight_per_class = np.array([a[1].sum() for a in args])
+    # total weight
+    tot_weight = np.sum(weight_per_class)
+    # weighted sum of squares
+    ss_alldata = sum((a[1] * safe_sqr(a[0])).sum(axis=0) for a in args)
+    # list of weighted sums
+    sums_args = [np.asarray((a[0] * a[1]).sum(axis=0)) for a in args]
+    square_of_sums_alldata = sum(sums_args) ** 2
+    square_of_sums_args = [s**2 for s in sums_args]
+    sstot = ss_alldata - square_of_sums_alldata / float(tot_weight)
+    ssbn = 0.0
+    for k, _ in enumerate(args):
+        ssbn += square_of_sums_args[k] / weight_per_class[k]
+    ssbn -= square_of_sums_alldata / float(tot_weight)
+    constant_features_idx = np.where(sstot == 0.0)[0]
+    if np.nonzero(ssbn)[0].size != ssbn.size and constant_features_idx.size:
+        warnings.warn("Features %s are constant." % constant_features_idx, UserWarning)
+    etasq = ssbn / sstot
+    # flatten matrix to vector in sparse case
+    etasq = np.asarray(etasq).ravel()
+    return np.sqrt(etasq)
+
+
+def correlation_ratio(
+    x: pd.Series,
+    y: pd.Series,
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    as_frame: bool = False,
+):
+    """Compute the weighted correlation ratio. The association between a continuous predictor (y)
+    and a categorical predictor (x). It can be weighted.
+
+    Parameters
+    ----------
+    x :
+        The categorical predictor vector of shape (n_samples,)
+    y :
+        The continuous predictor of shape (n_samples,)
+    as_frame :
+        return the result as a single row dataframe, convenience for the parallelization
+
+    Returns
+    -------
+    eta :
+        value of the correlation ratio
+    """
+    if sample_weight is None:
+        sample_weight = np.ones_like(y)
+
+    # one 2-uple per level of the categorical feature x
+    if x.dtype in ["category", "object"]:
+        args = [
+            (y[safe_mask(y, x == k)], sample_weight[safe_mask(sample_weight, x == k)])
+            for k in np.unique(x)
+        ]
+    elif y.dtype in ["category", "object"]:
+        args = [
+            (x[safe_mask(x, y == k)], sample_weight[safe_mask(sample_weight, y == k)])
+            for k in np.unique(y)
+        ]
+    else:
+        TypeError(
+            "one of the two series should be categorical/object and the other numerical"
+        )
+
+    if as_frame:
+        x_name = x.name if isinstance(x, pd.Series) else "var"
+        y_name = y.name if isinstance(y, pd.Series) else "target"
+        v = _weighted_correlation_ratio(*args)[0]
+        return pd.DataFrame(
+            {"row": [x_name, y_name], "col": [y_name, x_name], "val": [v, v]}
+        )
+    else:
+        return _weighted_correlation_ratio(*args)[0]
 
 
 

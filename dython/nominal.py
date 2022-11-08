@@ -735,7 +735,130 @@ def correlation_ratio(
     else:
         return _weighted_correlation_ratio(*args)[0]
 
+def correlation_ratio_matrix(
+    X: Union[pd.DataFrame, np.ndarray],
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    n_jobs: int = -1,
+    handle_na: Optional[str] = "drop",
+):
+    """correlation_ratio_matrix computes the weighted Correlation Ratio for
+    categorical-numerical association. This is a symmetric coefficient: CR(x,y) = CR(y,x)
 
+    The computation is embarrassingly parallel and is distributed on available cores.
+    Moreover, the statistic is computed for the unique combinations only and returned in a
+    tidy (long) format.
+
+    Parameters
+    ----------
+    X :
+        predictor dataframe
+    sample_weight :
+        sample weight, if any (e.g. exposure)
+    n_jobs :
+        the number of cores to use for the computation
+    handle_na :
+        either drop rows with na, fill na with 0 or do nothing
+
+    Returns
+    -------
+    pd.DataFrame
+        The correlation ratio matrix (lower triangular) in a tidy (long) format.
+    """
+    # sanity checks
+    X, sample_weight = _check_association_input(X, sample_weight, handle_na)
+
+    # Cramer's V only for categorical columns
+    # in GLM supposed to be all the columns
+    cat_cols = list(X.select_dtypes(include=["object", "category"]))
+    num_cols = list(X.select_dtypes(include=[np.number]))
+
+    if cat_cols and num_cols:
+        # explicitely store the unique 2-combinations of column names
+        # the first one should be the categorical predictor
+        comb_list = list(product(cat_cols, num_cols))
+        # define the number of cores
+        n_jobs = (
+            min(cpu_count(), len(cat_cols))
+            if n_jobs == -1
+            else min(cpu_count(), n_jobs)
+        )
+        # parallelize jobs
+        corr_ratio_matrix_entries = partial(
+            _compute_matrix_entries, func_xyw=correlation_ratio
+        )
+        lst = parallel_matrix_entries(
+            func=corr_ratio_matrix_entries,
+            df=X,
+            comb_list=comb_list,
+            sample_weight=sample_weight,
+            n_jobs=-1,
+        )
+        return lst
+    else:
+        return None
+
+
+def correlation_ratio_series(
+    X: Union[pd.DataFrame, np.ndarray],
+    target: Union[str, int],
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    n_jobs: int = -1,
+    handle_na: Optional[str] = "drop",
+):
+    """correlation_ratio_series computes the weighted correlation ration for
+    categorical-numerical association. This is a symmetric coefficient: CR(x,y) = CR(y,x)
+
+    The computation is embarrassingly parallel and is distributed on available cores.
+    Moreover, the statistic is computed for the unique combinations only and returned in a
+    tidy (long) format, a series.
+
+    Parameters
+    ----------
+    X :
+        predictor dataframe
+    target :
+        the predictor name or index with which to compute association
+    sample_weight :
+        sample weight, if any (e.g. exposure)
+    n_jobs :
+        the number of cores to use for the computation
+    handle_na :
+        either drop rows with na, fill na with 0 or do nothing
+
+    Returns
+    -------
+    pd.Series
+        The Correlation ratio series (lower triangular) in a tidy (long) format.
+    """
+    # sanity checks
+    X, sample_weight = _check_association_input(X, sample_weight, handle_na)
+
+    if X.loc[:, target].dtypes in ["object", "category"]:
+        # if the target is categorical, pick only num predictors
+        pred_list = list(X.select_dtypes(include=[np.number]))
+    else:
+        # if the target is numerical, the 2nd pred should be categorical
+        pred_list = list(X.select_dtypes(include=["object", "category"]))
+
+    if pred_list:
+        # define the number of cores
+        n_jobs = (
+            min(cpu_count(), len(pred_list))
+            if n_jobs == -1
+            else min(cpu_count(), n_jobs)
+        )
+        # parallelize jobs
+        _corr_ratio = partial(_compute_series, func_xyw=correlation_ratio)
+        lst = parallel_df(
+            func=_corr_ratio,
+            df=X[pred_list],
+            series=X[target],
+            sample_weight=sample_weight,
+            n_jobs=n_jobs,
+        )
+        return lst
+    else:
+        return None
 
 
 

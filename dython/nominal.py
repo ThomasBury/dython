@@ -1370,6 +1370,111 @@ def association_series(
 
     return assoc_series
 
+def association_matrix(
+    X: Union[pd.DataFrame, np.ndarray],
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    nom_nom_assoc: Union[Callable, str] = "theil",
+    num_num_assoc: Union[Callable, str] = "pearson",
+    nom_num_assoc: Union[Callable, str] = "correlation_ratio",
+    n_jobs: int = -1,
+    handle_na: Optional[str] = "drop",
+    nom_nom_comb: Optional[List[Tuple[str]]] = None,
+    num_num_comb: Optional[List[Tuple[str]]] = None,
+    nom_num_comb: Optional[List[Tuple[str]]] = None,
+):
+    """association_matrix computes the association matrix for cont-cont, cat-cont and cat-cat.
+    predictors. The weighted correlation matrix is used for the cont-cont predictors.
+    The correlation ratio is used between cont-cat predictors and either the Cramer's V or Theil's U
+    matrix for cat-cat predictors.
+
+    The association matrix is not symmetric is Theil is used. The obeservations might be weighted.
+
+    Parameters
+    ----------
+    X :
+        predictor dataframe
+    sample_weight :
+        sample weight, if any (e.g. exposure)
+    n_jobs :
+        the number of cores to use for the computation
+    handle_na :
+        either drop rows with na, fill na with 0 or do nothing
+    nom_nom_assoc :
+        If callable, a function which receives two `pd.Series` (and optionally a weight array) and returns a single number.
+        If string, name of nominal-nominal (categorical-categorical) association to use.
+        Options are 'cramer' for Cramer's V or `theil` for Theil's U. If 'theil',
+        heat-map columns are the provided information (U = U(row|col)).
+    num_num_assoc : str, optional
+        If callable, a function which receives two `pd.Series` and returns a single number.
+        If string, name of numerical-numerical association to use. Options are 'pearson'
+        for Pearson's R, 'spearman' for Spearman's R.
+    nom_num_assoc : str, optional
+        If callable, a function which receives two `pd.Series` and returns a single number.
+        If string, name of nominal-numerical association to use. Options are 'correlation_ratio'
+        for correlation ratio
+    nom_nom_comb_list :
+        a list of 2-uple of strings. Pairs of column names corresponding to the entries for nom_nom associations.
+        If asymmetrical association, take care of providing an exhaustive list of column name pairs.
+    num_num_comb_list :
+        a list of 2-uple of strings. Pairs of column names corresponding to the entries for num_num associations
+    nom_num_comb_list :
+        a list of 2-uple of strings. Pairs of column names corresponding to the entries for nom_num associations
+
+    Returns
+    -------
+    pd.DataFrame
+        the association matrix
+    """
+    # sanity checks
+    X, sample_weight = _check_association_input(X, sample_weight, handle_na)
+
+    # num-num, NaNs already checked above, not repeating the process
+    if callable(num_num_assoc):
+        w_num_num = _callable_association_matrix_fn(
+            assoc_fn=num_num_assoc,
+            cols_comb=num_num_comb,
+            kind="num-num",
+            X=X,
+            sample_weight=sample_weight,
+            handle_na=None,
+            n_jobs=n_jobs,
+        )
+    else:
+        w_num_num = wcorr_matrix(
+            X, sample_weight, n_jobs, handle_na=None, method=num_num_assoc
+        )
+
+    # nom-num
+    if callable(nom_num_assoc):
+        w_nom_num = _callable_association_matrix_fn(
+            assoc_fn=nom_num_assoc,
+            cols_comb=nom_num_comb,
+            kind="nom-num",
+            X=X,
+            sample_weight=sample_weight,
+            handle_na=None,
+            n_jobs=n_jobs,
+        )
+    else:
+        w_nom_num = correlation_ratio_matrix(X, sample_weight, n_jobs, handle_na=None)
+
+    # nom-nom
+    if callable(nom_nom_assoc):
+        w_nom_nom = _callable_association_matrix_fn(
+            assoc_fn=nom_nom_assoc,
+            cols_comb=nom_nom_comb,
+            kind="nom-nom",
+            X=X,
+            sample_weight=sample_weight,
+            handle_na=None,
+            n_jobs=n_jobs,
+        )
+    elif nom_nom_assoc == "cramer":
+        w_nom_nom = cramer_v_matrix(X, sample_weight, n_jobs, handle_na=None)
+    else:
+        w_nom_nom = theils_u_matrix(X, sample_weight, n_jobs, handle_na=None)
+
+    return pd.concat([w_num_num, w_nom_num, w_nom_nom], ignore_index=True)
 
 
 

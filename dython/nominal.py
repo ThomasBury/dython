@@ -3,6 +3,7 @@ import math
 import warnings
 from collections import Counter
 from itertools import repeat
+from typing import Union, Any, Tuple, List, Optional, Dict, Callable
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -48,6 +49,53 @@ def _inf_nan_str(x):
         return "inf"
     else:
         return ""
+
+
+def weighted_conditional_entropy(
+    x: pd.Series,
+    y: pd.Series,
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+):
+    """weighted_conditional_entropy computes the weighted conditional entropy between two
+    categorical predictors.
+
+    _extended_summary_
+
+    Parameters
+    ----------
+    x :
+        The predictor vector of shape (n_samples,)
+    y :
+        The target vector of shape (n_samples,)
+    sample_weight :
+        The weight vector, if any, of shape (n_samples,)
+
+    Returns
+    -------
+    float
+        weighted conditional entropy
+    """
+
+    if sample_weight is None:
+        sample_weight = np.ones(len(x))
+
+    df = pd.DataFrame({"x": x, "y": y, "sample_weight": sample_weight})
+    # df = df.fillna(0)
+    tot_weight = df["sample_weight"].sum()
+    y_counter = df[["y", "sample_weight"]].groupby("y").sum().to_dict()
+    y_counter = y_counter["sample_weight"]
+    xy_counter = df[["x", "y", "sample_weight"]].groupby(["x", "y"]).sum().to_dict()
+    xy_counter = xy_counter["sample_weight"]
+    h_xy = 0.0
+    for xy in xy_counter.keys():
+        p_xy = xy_counter[xy] / tot_weight
+        p_y = y_counter[xy[1]] / tot_weight
+        h_xy += p_xy * math.log(p_y / p_xy, math.e)
+    return h_xy
+
+
+
+
 
 
 def conditional_entropy(

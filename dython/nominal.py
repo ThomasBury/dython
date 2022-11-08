@@ -1655,6 +1655,166 @@ def _callable_association_matrix_fn(
         )
     return assoc
 
+################################
+# Association predictor-target
+################################
+
+
+def f_oneway_weighted(*args):
+    """f_oneway_weighted calculates the weighted F-statistic
+    (continuous target, categorical predictor)
+
+
+    Returns
+    -------
+    float
+        value of the F-statistic
+
+    Notes:
+    ------
+    F-statistic is calculated as:
+    .. math::
+        F(rf)=\frac{\sum_i (\bar{Y}_{i \bullet}-\bar{Y})^2 \mathbin{/} (K-1)}{\sum_i \sum_k (\bar{Y}_{ij}-\bar{Y}_{i\bullet})^2 \mathbin{/} (N - K)}
+    """
+    # how many levels (predictor)
+    n_classes = len(args)
+    # convert to float 2-uple d'array
+    args = [as_float_array(a) for a in args]
+    # compute the total weight per level
+    weight_per_class = np.array([a[1].sum() for a in args])
+    # total weight
+    tot_weight = np.sum(weight_per_class)
+    # weighted sum of squares
+    ss_alldata = sum((a[1] * safe_sqr(a[0])).sum(axis=0) for a in args)
+    # list of weighted sums
+    sums_args = [np.asarray((a[0] * a[1]).sum(axis=0)) for a in args]
+    square_of_sums_alldata = sum(sums_args) ** 2
+    square_of_sums_args = [s**2 for s in sums_args]
+    sstot = ss_alldata - square_of_sums_alldata / float(tot_weight)
+    ssbn = 0.0
+    for k, _ in enumerate(args):
+        ssbn += square_of_sums_args[k] / weight_per_class[k]
+    ssbn -= square_of_sums_alldata / float(tot_weight)
+    sswn = sstot - ssbn
+    dfbn = n_classes - 1
+    dfwn = tot_weight - n_classes
+    msb = ssbn / float(dfbn)
+    msw = sswn / float(dfwn)
+    constant_features_idx = np.where(msw == 0.0)[0]
+    if np.nonzero(msb)[0].size != msb.size and constant_features_idx.size:
+        warnings.warn("Features %s are constant." % constant_features_idx, UserWarning)
+    f = msb / msw
+    # flatten matrix to vector in sparse case
+    f = np.asarray(f).ravel()
+    return f
+
+
+def f_cat_regression(
+    x: Union[pd.Series, np.array],
+    y: Union[pd.Series, np.array],
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    as_frame: bool = False,
+):
+    """f_cat_regression computes the weighted ANOVA F-value for the provided sample.
+    (continuous target, categorical predictor)
+    
+    Parameters
+    ----------
+    x :
+        The predictor vector of shape (n_samples,)
+    y :
+        The target vector of shape (n_samples,)
+    sample_weight :
+        The weight vector, if any, of shape (n_samples,)
+    as_frame:
+        return output as a dataframe or a float
+
+    Returns
+    -------
+    f_statistic :
+        value of the F-statistic
+    """
+    if sample_weight is None:
+        sample_weight = np.ones_like(y)
+
+    # one 2-uple per level of the categorical feature x
+    args = [
+        (y[safe_mask(y, x == k)], sample_weight[safe_mask(sample_weight, x == k)])
+        for k in np.unique(x)
+    ]
+
+    if as_frame:
+        x_name = x.name if isinstance(x, pd.Series) else "var"
+        y_name = y.name if isinstance(y, pd.Series) else "target"
+        return pd.DataFrame(
+            {"row": x_name, "col": y_name, "val": f_oneway_weighted(*args)[0]},
+            index=[0],
+        )
+    else:
+        return f_oneway_weighted(*args)[0]
+
+
+def f_cat_regression_parallel(
+    X: pd.DataFrame,
+    y: Union[pd.Series, np.array],
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    n_jobs: int = -1,
+    handle_na: Optional[str] = "drop",
+):
+    """f_cat_regression_parallel computes the weighted ANOVA F-value for the provided categorical predictors
+    using parallelization of the code (continuous target, categorical predictor).
+
+    Parameters
+    ----------
+    X :
+        The set of regressors that will be tested sequentially, of shape (n_samples, n_features)
+    y :
+        The target vector of shape (n_samples,)
+    sample_weight :
+        The weight vector, if any, of shape (n_samples,)
+    n_jobs :
+        the number of cores to use for the computation
+    handle_na :
+        either drop rows with na, fill na with 0 or do nothing
+
+    Returns
+    -------
+    pd.Series
+        the value of the F-statistic for each predictor
+    """
+
+    # Cramer's V only for categorical columns
+    # in GLM supposed to be all the columns
+    cat_cols = list(X.select_dtypes(include=["object", "category"]))
+
+    if not isinstance(y, pd.Series):
+        y = pd.Series(y)
+        y.name = "target"
+
+    target = y.name
+    X = pd.concat([X, y], axis=1, ignore_index=False)
+    # sanity checks
+    X, sample_weight = _check_association_input(X, sample_weight, handle_na)
+
+    y = X[target].copy()
+    X = X.drop(target, axis=1)
+
+    # define the number of cores
+    n_jobs = min(cpu_count(), X.shape[1]) if n_jobs == -1 else min(cpu_count(), n_jobs)
+    # parallelize jobs
+    _f_stat_cat = partial(_compute_series, func_xyw=f_cat_regression)
+    return parallel_df(
+        func=_f_stat_cat,
+        df=X[cat_cols],
+        series=y,
+        sample_weight=sample_weight,
+        n_jobs=n_jobs,
+    )
+
+
+
+
+
 
 
 

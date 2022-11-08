@@ -1179,7 +1179,196 @@ def weighted_correlation_1cpu(
         return None
 
 
+#################################
+# association
+# cat-cat + cat-cont + cont-cont
+#################################
 
+
+def association_series(
+    X: pd.DataFrame,
+    target: Union[str, int],
+    features: Optional[List[str]] = None,
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    nom_nom_assoc: str = "theil",
+    num_num_assoc: str = "pearson",
+    nom_num_assoc: str = "correlation_ratio",
+    n_jobs: int = -1,
+    normalize: bool = False,
+    handle_na: Optional[str] = "drop",
+):
+    """association_series computes the association matrix for cont-cont, cat-cont and cat-cat.
+    predictors. The weighted correlation matrix is used for the cont-cont predictors.
+    The correlation ratio is used between cont-cat predictors and either the Cramer's V or Theil's U
+    matrix for cat-cat predictors. The Pearson or Spearman correlation coefficient is used for 
+    the cont-cont association.
+
+    Parameters
+    ----------
+    X :
+        predictor dataframe
+    sample_weight :
+        sample weight, if any (e.g. exposure)
+    n_jobs :
+        the number of cores to use for the computation
+    handle_na :
+        either drop rows with na, fill na with 0 or do nothing
+    features :
+        list of features with which to compute the association
+    nom_nom_assoc :
+        If callable, a function which receives two `pd.Series` (and optionally a weight array) and returns a single number.
+        If string, name of nominal-nominal (categorical-categorical) association to use.
+        Options are 'cramer' for Cramer's V or `theil` for Theil's U. If 'theil',
+        heat-map columns are the provided information (U = U(row|col)).
+    num_num_assoc : str, optional
+        If callable, a function which receives two `pd.Series` and returns a single number.
+        If string, name of numerical-numerical association to use. Options are 'pearson'
+        for Pearson's R, 'spearman' for Spearman's R.
+    nom_num_assoc : str, optional
+        If callable, a function which receives two `pd.Series` and returns a single number.
+        If string, name of nominal-numerical association to use. Options are 'correlation_ratio'
+        for correlation ratio
+    handle_na :
+        either drop rows with na, fill na with 0 or do nothing
+    normalize :
+        either to normalize or not the scores
+
+    Returns
+    -------
+    pd.Series
+        a series with all the association values with the target column
+
+    Raises
+    ------
+    TypeError
+        if features is not None and is not a list of strings
+    """
+    # sanity checks
+    X, sample_weight = _check_association_input(X, sample_weight, handle_na)
+
+    if features and is_list_of_str(features):
+        data = X[features + [target]]
+    elif features and (not is_list_of_str(features)):
+        raise TypeError("features is not a list of strings")
+    elif features is None:
+        data = X
+
+    # only numeric, NaN already checked, not repeating the process
+    if X.dtypes.map(is_numeric_dtype).all():
+        if callable(num_num_assoc):
+            return _callable_association_series_fn(
+                assoc_fn=num_num_assoc,
+                X=data,
+                target=target,
+                sample_weight=sample_weight,
+                n_jobs=n_jobs,
+                handle_na=handle_na,
+                kind="num-num",
+            )
+        else:
+            return wcorr_series(
+                data,
+                target,
+                sample_weight,
+                n_jobs,
+                handle_na=None,
+                method=num_num_assoc,
+            )
+
+    # only categorical
+    if X.dtypes.map(is_object_dtype).all() or X.dtypes.map(is_categorical_dtype).all():
+        if callable(nom_nom_assoc):
+            return _callable_association_series_fn(
+                assoc_fn=nom_nom_assoc,
+                X=data,
+                target=target,
+                sample_weight=sample_weight,
+                n_jobs=n_jobs,
+                handle_na=handle_na,
+                kind="nom-nom",
+            )
+        elif nom_nom_assoc == "theil":
+            return theils_u_series(data, target, sample_weight, n_jobs, handle_na=None)
+        elif nom_nom_assoc == "cramer":
+            return cramer_v_series(data, target, sample_weight, n_jobs, handle_na=None)
+
+    # cat-num
+    if callable(nom_num_assoc):
+        assoc_series = _callable_association_series_fn(
+            assoc_fn=nom_num_assoc,
+            X=data,
+            target=target,
+            sample_weight=sample_weight,
+            n_jobs=n_jobs,
+            handle_na=handle_na,
+            kind="nom-num",
+        )
+    else:
+        assoc_series = correlation_ratio_series(
+            data, target, sample_weight, n_jobs, handle_na=None
+        )
+
+    if normalize:
+        assoc_series = (assoc_series - assoc_series.min()) / np.ptp(assoc_series)
+
+    # cat-cat
+    if X.loc[:, target].dtypes in ["object", "category"]:
+        if callable(nom_nom_assoc):
+            assoc_series_complement = _callable_association_series_fn(
+                assoc_fn=nom_nom_assoc,
+                X=data,
+                target=target,
+                sample_weight=sample_weight,
+                n_jobs=n_jobs,
+                handle_na=handle_na,
+                kind="nom-nom",
+            )
+        elif nom_nom_assoc == "theil":
+            assoc_series_complement = theils_u_series(
+                data, target, sample_weight, n_jobs, handle_na=None
+            )
+        else:
+            assoc_series_complement = cramer_v_series(
+                data, target, sample_weight, n_jobs, handle_na=None
+            )
+
+        if normalize:
+            assoc_series_complement = (
+                assoc_series_complement - assoc_series_complement.min()
+            ) / np.ptp(assoc_series_complement)
+
+        assoc_series = pd.concat([assoc_series, assoc_series_complement])
+
+    # num-num
+    if X.loc[:, target].dtypes not in ["object", "category"]:
+        if callable(num_num_assoc):
+            assoc_series_complement = _callable_association_series_fn(
+                assoc_fn=num_num_assoc,
+                X=data,
+                target=target,
+                sample_weight=sample_weight,
+                n_jobs=n_jobs,
+                handle_na=handle_na,
+                kind="num-num",
+            )
+        else:
+            assoc_series_complement = wcorr_series(
+                data,
+                target,
+                sample_weight,
+                n_jobs,
+                handle_na=None,
+                method=num_num_assoc,
+            )
+
+        if normalize:
+            assoc_series_complement = (
+                assoc_series_complement - assoc_series_complement.min()
+            ) / np.ptp(assoc_series_complement)
+
+        assoc_series = pd.concat([assoc_series, assoc_series_complement])
+
+    return assoc_series
 
 
 

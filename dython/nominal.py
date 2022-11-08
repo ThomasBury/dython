@@ -276,6 +276,84 @@ def weighted_conditional_entropy(
         h_xy += p_xy * math.log(p_y / p_xy, math.e)
     return h_xy
 
+def weighted_theils_u(
+    x: pd.Series,
+    y: pd.Series,
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    as_frame: bool = False,
+):
+    """weighted_theils_u computes the weighted Theil's U statistic between two
+    categorical predictors.
+
+    Parameters
+    ----------
+    x :
+        The predictor vector of shape (n_samples,)
+    y :
+        The target vector of shape (n_samples,)
+    sample_weight :
+        The weight vector, if any, of shape (n_samples,)
+    as_frame:
+        return output as a dataframe or a float
+
+    Returns
+    -------
+    pd.DataFrame
+        predictor names and value of the Theil's U statistic
+    """
+
+    if sample_weight is None:
+        sample_weight = np.ones(len(x))
+
+    df = pd.DataFrame({"x": x, "y": y, "sample_weight": sample_weight})
+    # df = df.fillna(0)
+    tot_weight = df["sample_weight"].sum()
+    y_counter = df[["y", "sample_weight"]].groupby("y").sum().to_dict()
+    y_counter = y_counter["sample_weight"]
+    x_counter = df[["x", "sample_weight"]].groupby("x").sum().to_dict()
+    x_counter = x_counter["sample_weight"]
+    p_x = list(map(lambda n: n / tot_weight, x_counter.values()))
+    h_x = ss.entropy(p_x)
+    xy_counter = df[["x", "y", "sample_weight"]].groupby(["x", "y"]).sum().to_dict()
+    xy_counter = xy_counter["sample_weight"]
+    h_xy = 0.0
+    for xy in xy_counter.keys():
+        p_xy = xy_counter[xy] / tot_weight
+        p_y = y_counter[xy[1]] / tot_weight
+        h_xy += p_xy * math.log(p_y / p_xy, math.e)
+
+    if h_x == 0:
+        return 1.0
+    else:
+        u = (h_x - h_xy) / h_x
+        if -_PRECISION <= u < 0.0 or 1.0 < u <= 1.0 + _PRECISION:
+            rounded_u = 0.0 if u < 0 else 1.0
+            warnings.warn(
+                f"Rounded U = {u} to {rounded_u}. This is probably due to floating point precision issues.",
+                RuntimeWarning,
+            )
+            teil_u_val = rounded_u
+        else:
+            teil_u_val = u
+    if as_frame:
+        return pd.DataFrame(
+            {"row": x.name, "col": y.name, "val": teil_u_val}, index=[0]
+        )
+    else:
+        return teil_u_val
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

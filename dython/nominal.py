@@ -470,7 +470,49 @@ def theils_u_series(
     else:
         return None
 
+def cramer_v(
+    x: pd.Series,
+    y: pd.Series,
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    as_frame: bool = False,
+):
+    """cramer_v computes the weighted V statistic of two
+    categorical predictors.
 
+    Parameters
+    ----------
+    x :
+        series for the first categorical predictor
+    y :
+        series for the second categorical predictor, order doesn't matter, symmetrical association
+    sample_weight :
+        sample_weight (e.g. exposure) if any
+    as_frame :
+        return the result as a single row dataframe, convenience for the parallelization
+
+    Returns
+    -------
+    pd.DataFrame
+        single row dataframe with the predictor names and the statistic value
+    """
+    tot_weight = sample_weight.sum()
+    weighted_tab = pd.crosstab(x, y, sample_weight, aggfunc=sum).fillna(0)
+    chi2 = ss.chi2_contingency(weighted_tab)[0]
+    phi2 = chi2 / tot_weight
+    r, k = weighted_tab.shape
+    phi2corr = max(0, phi2 - ((k - 1) * (r - 1)) / (tot_weight - 1))
+    rcorr = r - ((r - 1) ** 2) / (tot_weight - 1)
+    kcorr = k - ((k - 1) ** 2) / (tot_weight - 1)
+    v = np.sqrt(phi2corr / min((kcorr - 1), (rcorr - 1)))
+
+    if as_frame:
+        x_name = x.name if isinstance(x, pd.Series) else "var"
+        y_name = y.name if isinstance(y, pd.Series) else "target"
+        return pd.DataFrame(
+            {"row": [x_name, y_name], "col": [y_name, x_name], "val": [v, v]}
+        )
+    else:
+        return v
 
 
 

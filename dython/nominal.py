@@ -514,7 +514,130 @@ def cramer_v(
     else:
         return v
 
+def cramer_v_matrix(
+    X: Union[pd.DataFrame, np.ndarray],
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    n_jobs: int = -1,
+    handle_na: Optional[str] = "drop",
+):
+    """cramer_v_matrix computes the weighted Cramer's V statistic for
+    categorical-categorical association. This is a symmetric coefficient: V(x,y) = V(y,x)
 
+    It uses the corrected Cramer's V statistics, itself based on the chi2 contingency
+    table. The computation is embarrassingly parallel and is distributed on available cores.
+    Moreover, the statistic is computed for the unique combinations only and returned in a
+    tidy (long) format.
+
+    Parameters
+    ----------
+    X :
+        predictor dataframe
+    sample_weight :
+        sample weight, if any (e.g. exposure)
+    n_jobs :
+        the number of cores to use for the computation
+    handle_na :
+        either drop rows with na, fill na with 0 or do nothing
+
+    Returns
+    -------
+    pd.DataFrame
+        The Cramer's V matrix (lower triangular) in a tidy (long) format.
+    """
+    # sanity checks
+    X, sample_weight = _check_association_input(X, sample_weight, handle_na)
+
+    # Cramer's V only for categorical columns
+    # in GLM supposed to be all the columns
+    cat_cols = list(X.select_dtypes(include=["object", "category"]))
+
+    if cat_cols:
+        # explicitely store the unique 2-combinations of column names
+        comb_list = [comb for comb in combinations(cat_cols, 2)]
+        # define the number of cores
+        n_jobs = (
+            min(cpu_count(), len(cat_cols))
+            if n_jobs == -1
+            else min(cpu_count(), n_jobs)
+        )
+        _cramer_v_matrix_entries = partial(_compute_matrix_entries, func_xyw=cramer_v)
+        lst = parallel_matrix_entries(
+            func=_cramer_v_matrix_entries,
+            df=X,
+            comb_list=comb_list,
+            sample_weight=sample_weight,
+            n_jobs=-1,
+        )
+        return lst
+    else:
+        return None
+
+
+def cramer_v_series(
+    X: Union[pd.DataFrame, np.ndarray],
+    target: Union[str, int],
+    sample_weight: Optional[Union[pd.Series, np.array]] = None,
+    n_jobs: int = -1,
+    handle_na: Optional[str] = "drop",
+):
+    """cramer_v_series computes the weighted Cramer's V statistic for
+    categorical-categorical association. This is a symmetric coefficient: V(x,y) = V(y,x)
+
+    It uses the corrected Cramer's V statistics, itself based on the chi2 contingency
+    table. The computation is embarrassingly parallel and is distributed on available cores.
+    Moreover, the statistic is computed for the unique combinations only and returned in a
+    tidy (long) format.
+
+    Parameters
+    ----------
+    X :
+        predictor dataframe
+    target :
+        the predictor name or index with which to compute association
+    sample_weight :
+        sample weight, if any (e.g. exposure)
+    n_jobs :
+        the number of cores to use for the computation
+    handle_na :
+        either drop rows with na, fill na with 0 or do nothing
+
+    Returns
+    -------
+    pd.DataFrame
+        The Cramer's V series
+    """
+    # sanity checks
+    X, sample_weight = _check_association_input(X, sample_weight, handle_na)
+
+    if X.loc[:, target].dtypes not in ["object", "category"]:
+        raise TypeError("the target column is not categorical")
+
+    # Cramer's V only for categorical columns
+    # in GLM supposed to be all the columns
+    cat_cols = list(X.select_dtypes(include=["object", "category"]))
+
+    if cat_cols:
+        X = X[cat_cols]
+        # define the number of cores
+        n_jobs = (
+            min(cpu_count(), len(cat_cols))
+            if n_jobs == -1
+            else min(cpu_count(), n_jobs)
+        )
+        # parallelize jobs
+        _cramer_v = partial(_compute_series, func_xyw=cramer_v)
+        lst = parallel_df(
+            func=_cramer_v,
+            df=X[cat_cols],
+            series=X[target],
+            sample_weight=sample_weight,
+            n_jobs=n_jobs,
+        )
+        # concatenate the results
+        # v_df_list = list(chain(*v_df_list))
+        return lst  # pd.concat(lst)
+    else:
+        return None
 
 
 

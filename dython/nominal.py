@@ -88,7 +88,7 @@ def parallel_matrix_entries(
     )
     comb_chunks = np.array_split(comb_list, n_jobs)
     lst = Parallel(n_jobs=n_jobs)(
-        delayed(func)(df, sample_weight, comb_chunk) for comb_chunk in comb_chunks
+        delayed(func)(X=df, sample_weight=sample_weight, comb_list=comb_chunk) for comb_chunk in comb_chunks
     )
     # return flatten list of pandas DF
     return pd.concat(list(chain(*lst)), ignore_index=True)

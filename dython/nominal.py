@@ -2258,6 +2258,14 @@ def _check_association_input(
 
     if isinstance(sample_weight, pd.Series):
         sample_weight = sample_weight.to_numpy()
+        
+    single_value_columns_set = set()
+    for c in X.columns:
+        if X[c].nunique() == 1:
+            single_value_columns_set.add(c)
+    
+    if single_value_columns_set:
+        warnings.warn(f"{single_value_columns_set} columns have been removed (single unique values)")
 
     # handle nans
     if handle_na is None:

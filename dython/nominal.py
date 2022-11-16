@@ -2346,11 +2346,11 @@ def xy_to_matrix(xy: pd.DataFrame):
     pd.DataFrame
 
     """
+    xy = xy.pivot(index="row", columns="col").fillna(0)
+    xy.columns = xy.columns.droplevel(0)
     return (
-        xy.pivot(*xy.columns)
-        .fillna(0)
-        .rename_axis(None, axis=1)
-        .rename_axis(None, axis=0)
+        xy.rename_axis(None, axis=1)
+          .rename_axis(None, axis=0)
     )
 
 

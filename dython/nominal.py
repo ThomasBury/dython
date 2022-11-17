@@ -208,8 +208,7 @@ def _compute_matrix_entries(
             )
         )
 
-    return v_df_list    
-    
+    return v_df_list
 
 
 ########################
@@ -233,6 +232,7 @@ def _compute_matrix_entries(
 ##################
 # CAT-CAT
 ##################
+
 
 def weighted_conditional_entropy(
     x: pd.Series,
@@ -566,7 +566,7 @@ def cramer_v_matrix(
             df=X,
             comb_list=comb_list,
             sample_weight=sample_weight,
-            n_jobs=-1,
+            n_jobs=n_jobs,
         )
         return lst
     else:
@@ -1262,7 +1262,6 @@ def association_series(
                 target=target,
                 sample_weight=sample_weight,
                 n_jobs=n_jobs,
-                handle_na=handle_na,
                 kind="num-num",
             )
         else:
@@ -1284,7 +1283,6 @@ def association_series(
                 target=target,
                 sample_weight=sample_weight,
                 n_jobs=n_jobs,
-                handle_na=handle_na,
                 kind="nom-nom",
             )
         elif nom_nom_assoc == "theil":
@@ -1300,7 +1298,6 @@ def association_series(
             target=target,
             sample_weight=sample_weight,
             n_jobs=n_jobs,
-            handle_na=handle_na,
             kind="nom-num",
         )
     else:
@@ -1320,7 +1317,6 @@ def association_series(
                 target=target,
                 sample_weight=sample_weight,
                 n_jobs=n_jobs,
-                handle_na=handle_na,
                 kind="nom-nom",
             )
         elif nom_nom_assoc == "theil":
@@ -1348,7 +1344,6 @@ def association_series(
                 target=target,
                 sample_weight=sample_weight,
                 n_jobs=n_jobs,
-                handle_na=handle_na,
                 kind="num-num",
             )
         else:
@@ -1436,7 +1431,6 @@ def association_matrix(
             kind="num-num",
             X=X,
             sample_weight=sample_weight,
-            handle_na=None,
             n_jobs=n_jobs,
         )
     else:
@@ -1452,7 +1446,6 @@ def association_matrix(
             kind="nom-num",
             X=X,
             sample_weight=sample_weight,
-            handle_na=None,
             n_jobs=n_jobs,
         )
     else:
@@ -1466,7 +1459,6 @@ def association_matrix(
             kind="nom-nom",
             X=X,
             sample_weight=sample_weight,
-            handle_na=None,
             n_jobs=n_jobs,
         )
     elif nom_nom_assoc == "cramer":
@@ -1475,7 +1467,6 @@ def association_matrix(
         w_nom_nom = theils_u_matrix(X, sample_weight, n_jobs, handle_na=None)
 
     return pd.concat([w_num_num, w_nom_num, w_nom_nom], ignore_index=True)
-
 
 
 def _callable_association_series_fn(
@@ -1654,6 +1645,7 @@ def _callable_association_matrix_fn(
             n_jobs=n_jobs,
         )
     return assoc
+
 
 ################################
 # Association predictor-target
@@ -2210,7 +2202,6 @@ def f_stat_classification_parallel(
         ascending=False
     )
 
-
 ############
 # Utilities
 ############
@@ -2352,7 +2343,6 @@ def xy_to_matrix(xy: pd.DataFrame):
         xy.rename_axis(None, axis=1)
           .rename_axis(None, axis=0)
     )
-
 
 
 

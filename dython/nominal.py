@@ -15,7 +15,11 @@ from sklearn.utils import as_float_array, safe_sqr, safe_mask
 from joblib import Parallel, delayed
 from multiprocessing import cpu_count
 from itertools import combinations, permutations, product, chain
-from pandas.api.types import is_object_dtype, is_numeric_dtype, is_categorical_dtype
+from pandas.api.types import (
+    is_object_dtype,
+    is_numeric_dtype,
+    is_categorical_dtype,
+)
 from scipy.stats import rankdata
 from functools import partial
 from ._private import convert
@@ -62,7 +66,7 @@ __all__ = [
     "plot_association_matrix",
     "numerical_encoding",
     "identify_nominal_columns",
-    "identify_numeric_columns"   
+    "identify_numeric_columns",
 ]
 
 _REPLACE = "replace"
@@ -72,7 +76,6 @@ _DEFAULT_REPLACE_VALUE = 0.0
 _PRECISION = 1e-13
 
 
-
 def _inf_nan_str(x):
     if np.isnan(x):
         return "NaN"
@@ -80,7 +83,7 @@ def _inf_nan_str(x):
         return "inf"
     else:
         return ""
-    
+
 
 ########################
 # parallelization utils
@@ -115,11 +118,14 @@ def parallel_matrix_entries(
         concatenated results into a single pandas DF
     """
     n_jobs = (
-        min(cpu_count(), len(df.columns)) if n_jobs == -1 else min(cpu_count(), n_jobs)
+        min(cpu_count(), len(df.columns))
+        if n_jobs == -1
+        else min(cpu_count(), n_jobs)
     )
     comb_chunks = np.array_split(comb_list, n_jobs)
     lst = Parallel(n_jobs=n_jobs)(
-        delayed(func)(X=df, sample_weight=sample_weight, comb_list=comb_chunk) for comb_chunk in comb_chunks
+        delayed(func)(X=df, sample_weight=sample_weight, comb_list=comb_chunk)
+        for comb_chunk in comb_chunks
     )
     # return flatten list of pandas DF
     return pd.concat(list(chain(*lst)), ignore_index=True)
@@ -155,7 +161,9 @@ def parallel_df(
         concatenated results into a single pandas DF
     """
     n_jobs = (
-        min(cpu_count(), len(df.columns)) if n_jobs == -1 else min(cpu_count(), n_jobs)
+        min(cpu_count(), len(df.columns))
+        if n_jobs == -1
+        else min(cpu_count(), n_jobs)
     )
     col_chunks = np.array_split(range(len(df.columns)), n_jobs)
     lst = Parallel(n_jobs=n_jobs)(
@@ -200,7 +208,9 @@ def _compute_series(
         )
 
     return X.apply(
-        lambda col: _closure_compute_series(x=col, y=y, sample_weight=sample_weight)
+        lambda col: _closure_compute_series(
+            x=col, y=y, sample_weight=sample_weight
+        )
     ).fillna(0.0)
 
 
@@ -235,7 +245,10 @@ def _compute_matrix_entries(
     for comb in comb_list:
         v_df_list.append(
             func_xyw(
-                x=X[comb[0]], y=X[comb[1]], sample_weight=sample_weight, as_frame=True
+                x=X[comb[0]],
+                y=X[comb[1]],
+                sample_weight=sample_weight,
+                as_frame=True,
             )
         )
 
@@ -298,7 +311,9 @@ def weighted_conditional_entropy(
     tot_weight = df["sample_weight"].sum()
     y_counter = df[["y", "sample_weight"]].groupby("y").sum().to_dict()
     y_counter = y_counter["sample_weight"]
-    xy_counter = df[["x", "y", "sample_weight"]].groupby(["x", "y"]).sum().to_dict()
+    xy_counter = (
+        df[["x", "y", "sample_weight"]].groupby(["x", "y"]).sum().to_dict()
+    )
     xy_counter = xy_counter["sample_weight"]
     h_xy = 0.0
     for xy in xy_counter.keys():
@@ -306,6 +321,7 @@ def weighted_conditional_entropy(
         p_y = y_counter[xy[1]] / tot_weight
         h_xy += p_xy * math.log(p_y / p_xy, math.e)
     return h_xy
+
 
 def weighted_theils_u(
     x: pd.Series,
@@ -345,7 +361,9 @@ def weighted_theils_u(
     x_counter = x_counter["sample_weight"]
     p_x = list(map(lambda n: n / tot_weight, x_counter.values()))
     h_x = ss.entropy(p_x)
-    xy_counter = df[["x", "y", "sample_weight"]].groupby(["x", "y"]).sum().to_dict()
+    xy_counter = (
+        df[["x", "y", "sample_weight"]].groupby(["x", "y"]).sum().to_dict()
+    )
     xy_counter = xy_counter["sample_weight"]
     h_xy = 0.0
     for xy in xy_counter.keys():
@@ -372,6 +390,7 @@ def weighted_theils_u(
         )
     else:
         return teil_u_val
+
 
 def theils_u_matrix(
     X: Union[pd.DataFrame, np.ndarray],
@@ -501,6 +520,7 @@ def theils_u_series(
     else:
         return None
 
+
 def cramer_v(
     x: pd.Series,
     y: pd.Series,
@@ -544,6 +564,7 @@ def cramer_v(
         )
     else:
         return v
+
 
 def cramer_v_matrix(
     X: Union[pd.DataFrame, np.ndarray],
@@ -591,7 +612,9 @@ def cramer_v_matrix(
             if n_jobs == -1
             else min(cpu_count(), n_jobs)
         )
-        _cramer_v_matrix_entries = partial(_compute_matrix_entries, func_xyw=cramer_v)
+        _cramer_v_matrix_entries = partial(
+            _compute_matrix_entries, func_xyw=cramer_v
+        )
         lst = parallel_matrix_entries(
             func=_cramer_v_matrix_entries,
             df=X,
@@ -670,6 +693,7 @@ def cramer_v_series(
     else:
         return None
 
+
 def _weighted_correlation_ratio(*args):
     """Calculates the Correlation Ratio (sometimes marked by the greek letter Eta)
     for categorical-continuous association.
@@ -707,7 +731,9 @@ def _weighted_correlation_ratio(*args):
     ssbn -= square_of_sums_alldata / float(tot_weight)
     constant_features_idx = np.where(sstot == 0.0)[0]
     if np.nonzero(ssbn)[0].size != ssbn.size and constant_features_idx.size:
-        warnings.warn("Features %s are constant." % constant_features_idx, UserWarning)
+        warnings.warn(
+            "Features %s are constant." % constant_features_idx, UserWarning
+        )
     etasq = ssbn / sstot
     # flatten matrix to vector in sparse case
     etasq = np.asarray(etasq).ravel()
@@ -743,12 +769,18 @@ def correlation_ratio(
     # one 2-uple per level of the categorical feature x
     if x.dtype in ["category", "object"]:
         args = [
-            (y[safe_mask(y, x == k)], sample_weight[safe_mask(sample_weight, x == k)])
+            (
+                y[safe_mask(y, x == k)],
+                sample_weight[safe_mask(sample_weight, x == k)],
+            )
             for k in np.unique(x)
         ]
     elif y.dtype in ["category", "object"]:
         args = [
-            (x[safe_mask(x, y == k)], sample_weight[safe_mask(sample_weight, y == k)])
+            (
+                x[safe_mask(x, y == k)],
+                sample_weight[safe_mask(sample_weight, y == k)],
+            )
             for k in np.unique(y)
         ]
     else:
@@ -765,6 +797,7 @@ def correlation_ratio(
         )
     else:
         return _weighted_correlation_ratio(*args)[0]
+
 
 def correlation_ratio_matrix(
     X: Union[pd.DataFrame, np.ndarray],
@@ -891,6 +924,7 @@ def correlation_ratio_series(
     else:
         return None
 
+
 def wm(x: np.array, w: np.array):
     """wm computes the weighted mean
 
@@ -968,7 +1002,9 @@ def wrank(x, w):
         rankdata(x), return_counts=True, return_inverse=True
     )
     a = np.bincount(arr_inv, w)
-    return (np.cumsum(a) - a)[arr_inv] + ((counts + 1) / 2 * (a / counts))[arr_inv]
+    return (np.cumsum(a) - a)[arr_inv] + ((counts + 1) / 2 * (a / counts))[
+        arr_inv
+    ]
 
 
 def wspearman(x, y, w):
@@ -1154,7 +1190,14 @@ def wcorr_matrix(
             )
             return lst
         else:
-            return matrix_to_xy(weighted_correlation_1cpu(X, sample_weight, handle_na)).to_frame().reset_index().rename(columns={'level_0':'row', 'level_1': 'col', 0: 'val'})
+            return (
+                matrix_to_xy(
+                    weighted_correlation_1cpu(X, sample_weight, handle_na)
+                )
+                .to_frame()
+                .reset_index()
+                .rename(columns={"level_0": "row", "level_1": "col", 0: "val"})
+            )
     else:
         return None
 
@@ -1230,7 +1273,7 @@ def association_series(
     """association_series computes the association matrix for cont-cont, cat-cont and cat-cat.
     predictors. The weighted correlation matrix is used for the cont-cont predictors.
     The correlation ratio is used between cont-cat predictors and either the Cramer's V or Theil's U
-    matrix for cat-cat predictors. The Pearson or Spearman correlation coefficient is used for 
+    matrix for cat-cat predictors. The Pearson or Spearman correlation coefficient is used for
     the cont-cont association.
 
     Parameters
@@ -1305,7 +1348,10 @@ def association_series(
             )
 
     # only categorical
-    if X.dtypes.map(is_object_dtype).all() or X.dtypes.map(is_categorical_dtype).all():
+    if (
+        X.dtypes.map(is_object_dtype).all()
+        or X.dtypes.map(is_categorical_dtype).all()
+    ):
         if callable(nom_nom_assoc):
             return _callable_association_series_fn(
                 assoc_fn=nom_nom_assoc,
@@ -1316,9 +1362,13 @@ def association_series(
                 kind="nom-nom",
             )
         elif nom_nom_assoc == "theil":
-            return theils_u_series(data, target, sample_weight, n_jobs, handle_na=None)
+            return theils_u_series(
+                data, target, sample_weight, n_jobs, handle_na=None
+            )
         elif nom_nom_assoc == "cramer":
-            return cramer_v_series(data, target, sample_weight, n_jobs, handle_na=None)
+            return cramer_v_series(
+                data, target, sample_weight, n_jobs, handle_na=None
+            )
 
     # cat-num
     if callable(nom_num_assoc):
@@ -1336,7 +1386,9 @@ def association_series(
         )
 
     if normalize:
-        assoc_series = (assoc_series - assoc_series.min()) / np.ptp(assoc_series)
+        assoc_series = (assoc_series - assoc_series.min()) / np.ptp(
+            assoc_series
+        )
 
     # cat-cat
     if X.loc[:, target].dtypes in ["object", "category"]:
@@ -1394,6 +1446,7 @@ def association_series(
         assoc_series = pd.concat([assoc_series, assoc_series_complement])
 
     return assoc_series
+
 
 def association_matrix(
     X: Union[pd.DataFrame, np.ndarray],
@@ -1479,7 +1532,9 @@ def association_matrix(
             n_jobs=n_jobs,
         )
     else:
-        w_nom_num = correlation_ratio_matrix(X, sample_weight, n_jobs, handle_na=None)
+        w_nom_num = correlation_ratio_matrix(
+            X, sample_weight, n_jobs, handle_na=None
+        )
 
     # nom-nom
     if callable(nom_nom_assoc):
@@ -1640,7 +1695,9 @@ def _callable_association_matrix_fn(
         if kind == "num-num":
             selected_cols = list(X.select_dtypes(include=[np.number]))
         elif kind == "nom-nom":
-            selected_cols = list(X.select_dtypes(include=["object", "category"]))
+            selected_cols = list(
+                X.select_dtypes(include=["object", "category"])
+            )
         elif kind == "nom-num":
             cat_cols = list(X.select_dtypes(include=["object", "category"]))
             num_cols = list(X.select_dtypes(include=[np.number]))
@@ -1724,7 +1781,9 @@ def f_oneway_weighted(*args):
     msw = sswn / float(dfwn)
     constant_features_idx = np.where(msw == 0.0)[0]
     if np.nonzero(msb)[0].size != msb.size and constant_features_idx.size:
-        warnings.warn("Features %s are constant." % constant_features_idx, UserWarning)
+        warnings.warn(
+            "Features %s are constant." % constant_features_idx, UserWarning
+        )
     f = msb / msw
     # flatten matrix to vector in sparse case
     f = np.asarray(f).ravel()
@@ -1739,7 +1798,7 @@ def f_cat_regression(
 ):
     """f_cat_regression computes the weighted ANOVA F-value for the provided sample.
     (continuous target, categorical predictor)
-    
+
     Parameters
     ----------
     x :
@@ -1761,7 +1820,10 @@ def f_cat_regression(
 
     # one 2-uple per level of the categorical feature x
     args = [
-        (y[safe_mask(y, x == k)], sample_weight[safe_mask(sample_weight, x == k)])
+        (
+            y[safe_mask(y, x == k)],
+            sample_weight[safe_mask(sample_weight, x == k)],
+        )
         for k in np.unique(x)
     ]
 
@@ -1822,7 +1884,11 @@ def f_cat_regression_parallel(
     X = X.drop(target, axis=1)
 
     # define the number of cores
-    n_jobs = min(cpu_count(), X.shape[1]) if n_jobs == -1 else min(cpu_count(), n_jobs)
+    n_jobs = (
+        min(cpu_count(), X.shape[1])
+        if n_jobs == -1
+        else min(cpu_count(), n_jobs)
+    )
     # parallelize jobs
     _f_stat_cat = partial(_compute_series, func_xyw=f_cat_regression)
     return parallel_df(
@@ -1896,13 +1962,17 @@ def f_cont_regression_parallel(
     # sanity checks
     X, sample_weight = _check_association_input(X, sample_weight, handle_na)
 
-    correlation_coefficient = wcorr_series(X, target, sample_weight, n_jobs, handle_na)
+    correlation_coefficient = wcorr_series(
+        X, target, sample_weight, n_jobs, handle_na
+    )
 
     deg_of_freedom = y.size - 2
     corr_coef_squared = correlation_coefficient**2
 
     with np.errstate(divide="ignore", invalid="ignore"):
-        f_statistic = corr_coef_squared / (1 - corr_coef_squared) * deg_of_freedom
+        f_statistic = (
+            corr_coef_squared / (1 - corr_coef_squared) * deg_of_freedom
+        )
 
     if force_finite and not np.isfinite(f_statistic).all():
         # case where there is a perfect (anti-)correlation
@@ -1960,7 +2030,12 @@ def f_stat_regression_parallel(
         the value of the F-statistic for each predictor
     """
     f_stat_cont_series = f_cont_regression_parallel(
-        X, y, sample_weight, n_jobs, force_finite=force_finite, handle_na=handle_na
+        X,
+        y,
+        sample_weight,
+        n_jobs,
+        force_finite=force_finite,
+        handle_na=handle_na,
     )
     f_stat_cat_series = f_cat_regression_parallel(
         X, y, sample_weight, n_jobs, handle_na=handle_na
@@ -2016,7 +2091,10 @@ def f_cont_classification(
 
     # one 2-uple per level of the categorical target y, continuous predictor x
     args = [
-        (x[safe_mask(x, y == k)], sample_weight[safe_mask(sample_weight, y == k)])
+        (
+            x[safe_mask(x, y == k)],
+            sample_weight[safe_mask(sample_weight, y == k)],
+        )
         for k in np.unique(y)
     ]
 
@@ -2038,7 +2116,7 @@ def f_cont_classification_parallel(
     n_jobs: int = -1,
     handle_na: Optional[str] = "drop",
 ):
-    """f_cont_classification_parallel computes the weighted ANOVA F-value 
+    """f_cont_classification_parallel computes the weighted ANOVA F-value
     for the provided categorical predictors using parallelization of the code.
     Categorical target, continuous predictor.
 
@@ -2076,7 +2154,11 @@ def f_cont_classification_parallel(
     X = X.drop(target, axis=1)
 
     # define the number of cores
-    n_jobs = min(cpu_count(), X.shape[1]) if n_jobs == -1 else min(cpu_count(), n_jobs)
+    n_jobs = (
+        min(cpu_count(), X.shape[1])
+        if n_jobs == -1
+        else min(cpu_count(), n_jobs)
+    )
     # parallelize jobs
     _f_stat_cont_clf = partial(_compute_series, func_xyw=f_cont_classification)
     return parallel_df(
@@ -2097,7 +2179,7 @@ def f_cat_classification_parallel(
     handle_na="drop",
 ):
     """Univariate information dependence
-    It is converted to an F score ranks features in the same order if 
+    It is converted to an F score ranks features in the same order if
     all the features are positively correlated with the target.
     Note it is therefore recommended as a feature selection criterion to identify
     potentially predictive feature for a downstream classifier, irrespective of
@@ -2210,7 +2292,12 @@ def f_stat_classification_parallel(
         X, y, sample_weight, n_jobs, handle_na=handle_na
     )
     f_stat_cat_series = f_cat_classification_parallel(
-        X, y, sample_weight, n_jobs, handle_na=handle_na, force_finite=force_finite
+        X,
+        y,
+        sample_weight,
+        n_jobs,
+        handle_na=handle_na,
+        force_finite=force_finite,
     )
 
     # normalize the scores
@@ -2232,9 +2319,11 @@ def f_stat_classification_parallel(
         ascending=False
     )
 
+
 ############
 # Utilities
 ############
+
 
 def _check_association_input(
     X: pd.DataFrame,
@@ -2279,14 +2368,16 @@ def _check_association_input(
 
     if isinstance(sample_weight, pd.Series):
         sample_weight = sample_weight.to_numpy()
-        
+
     single_value_columns_set = set()
     for c in X.columns:
         if X[c].nunique() == 1:
             single_value_columns_set.add(c)
-    
+
     if single_value_columns_set:
-        warnings.warn(f"{single_value_columns_set} columns have been removed (single unique values)")
+        warnings.warn(
+            f"{single_value_columns_set} columns have been removed (single unique values)"
+        )
 
     # handle nans
     if handle_na is None:
@@ -2315,7 +2406,8 @@ def is_list_of_str(str_list: List[str]):
     """
     if str_list is not None:
         if not (
-            isinstance(str_list, list) and all(isinstance(s, str) for s in str_list)
+            isinstance(str_list, list)
+            and all(isinstance(s, str) for s in str_list)
         ):
             return False
         else:
@@ -2323,7 +2415,9 @@ def is_list_of_str(str_list: List[str]):
 
 
 def matrix_to_xy(
-    df: pd.DataFrame, columns: Optional[List[str]] = None, reset_index: bool = False
+    df: pd.DataFrame,
+    columns: Optional[List[str]] = None,
+    reset_index: bool = False,
 ):
     """matrix_to_xy wide to long format of the association matrix
 
@@ -2369,11 +2463,9 @@ def xy_to_matrix(xy: pd.DataFrame):
     """
     xy = xy.pivot(index="row", columns="col").fillna(0)
     xy.columns = xy.columns.droplevel(0)
-    return (
-        xy.rename_axis(None, axis=1)
-          .rename_axis(None, axis=0)
-    )
-    
+    return xy.rename_axis(None, axis=1).rename_axis(None, axis=0)
+
+
 def identify_nominal_columns(dataset):
     """
     Given a dataset, identify categorical columns.
@@ -2508,12 +2600,12 @@ def numerical_encoding(
         return converted_dataset, binary_columns_dict
 
 
-
 ###############
 # visualization
 ###############
 
-def cluster_sq_matrix(sq_matrix: pd.DataFrame, method: str="ward"):
+
+def cluster_sq_matrix(sq_matrix: pd.DataFrame, method: str = "ward"):
     """
     Apply agglomerative clustering in order to sort
     a correlation matrix.
@@ -2522,14 +2614,14 @@ def cluster_sq_matrix(sq_matrix: pd.DataFrame, method: str="ward"):
 
     Parameters:
     -----------
-    corr_mat : 
+    corr_mat :
         a square correlation matrix (pandas DataFrame)
     method :
         linkage method, see https://docs.scipy.org/doc/scipy/reference/generated/scipy.cluster.hierarchy.linkage.html
 
     Returns:
     --------
-    sq_matrix : 
+    sq_matrix :
         pd.DataFrame, a sorted square matrix
 
     Example:
@@ -2548,8 +2640,10 @@ def cluster_sq_matrix(sq_matrix: pd.DataFrame, method: str="ward"):
     sq_matrix = sq_matrix.reindex(columns, axis=0)
     return sq_matrix
 
-def heatmap(data, row_labels, col_labels, ax=None,
-            cbar_kw=None, cbarlabel="", **kwargs):
+
+def heatmap(
+    data, row_labels, col_labels, ax=None, cbar_kw=None, cbarlabel="", **kwargs
+):
     """
     Create a heatmap from a numpy array and two lists of labels.
 
@@ -2587,7 +2681,7 @@ def heatmap(data, row_labels, col_labels, ax=None,
     ax_cb = divider.append_axes("right", size="5%", pad=0.05)
     fig = ax.get_figure()
     fig.add_axes(ax_cb)
-    
+
     cbar = ax.figure.colorbar(im, cax=ax_cb, **cbar_kw)
     cbar.ax.set_ylabel(cbarlabel, rotation=-90, va="bottom")
 
@@ -2596,45 +2690,51 @@ def heatmap(data, row_labels, col_labels, ax=None,
     ax.set_yticks(np.arange(data.shape[0]), labels=row_labels)
 
     # Let the horizontal axes labeling appear on top.
-    ax.tick_params(top=False, bottom=True,
-                   labeltop=False, labelbottom=True)
+    ax.tick_params(top=False, bottom=True, labeltop=False, labelbottom=True)
 
     # Rotate the tick labels and set their alignment.
-    plt.setp(ax.get_xticklabels(), rotation=90, ha="right",
-             rotation_mode="anchor")
+    plt.setp(
+        ax.get_xticklabels(), rotation=90, ha="right", rotation_mode="anchor"
+    )
 
     # Turn spines off and create white grid.
     ax.spines[:].set_visible(False)
 
-    ax.set_xticks(np.arange(data.shape[1]+1)-.5, minor=True)
-    ax.set_yticks(np.arange(data.shape[0]+1)-.5, minor=True)
-    ax.grid(which="minor", color="w", linestyle='-', linewidth=2)
+    ax.set_xticks(np.arange(data.shape[1] + 1) - 0.5, minor=True)
+    ax.set_yticks(np.arange(data.shape[0] + 1) - 0.5, minor=True)
+    ax.grid(which="minor", color="w", linestyle="-", linewidth=2)
     ax.tick_params(which="minor", bottom=False, left=False)
 
     return im, cbar
 
+
 def create_dtype_dict(df: pd.DataFrame):
     """create a custom dictionary of data type for adding suffixes
     to column names in the plotting utility for association matrix
-    
+
     Parameters
     ----------
-    df : 
+    df :
         the dataframe used for computing the association matrix
     """
     cat_cols = list(df.select_dtypes(include=["object", "category", "bool"]))
     num_cols = list(df.select_dtypes(include=[np.number]))
     remaining_cols = set(df.columns) - set(cat_cols).union(set(num_cols))
-    
-    cat_dic = {c: 'cat' for c in cat_cols}
-    num_dic = {c: 'num' for c in num_cols}
-    remainder_dic = {c: 'unk' for c in remaining_cols}
+
+    cat_dic = {c: "cat" for c in cat_cols}
+    num_dic = {c: "num" for c in num_cols}
+    remainder_dic = {c: "unk" for c in remaining_cols}
     return {**cat_dic, **num_dic, **remainder_dic}
 
 
-def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
-                     textcolors=("black", "white"),
-                     threshold=None, **textkw):
+def annotate_heatmap(
+    im,
+    data=None,
+    valfmt="{x:.2f}",
+    textcolors=("black", "white"),
+    threshold=None,
+    **textkw,
+):
     """
     A function to annotate a heatmap.
 
@@ -2667,12 +2767,11 @@ def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
     if threshold is not None:
         threshold = im.norm(threshold)
     else:
-        threshold = im.norm(data.max())/2.
+        threshold = im.norm(data.max()) / 2.0
 
     # Set default alignment to center, but allow it to be
     # overwritten by textkw.
-    kw = dict(horizontalalignment="center",
-              verticalalignment="center")
+    kw = dict(horizontalalignment="center", verticalalignment="center")
     kw.update(textkw)
 
     # Get the formatter in case a string is supplied
@@ -2690,54 +2789,58 @@ def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
 
     return texts
 
-def plot_association_matrix(assoc_mat: pd.DataFrame,
-                            suffix_dic: Dict[str, str] = None,
-                            ax: matplotlib.axes.Axes = None, 
-                            cmap: str = 'coolwarm', 
-                            cbarlabel: str = None,
-                            figsize: Tuple[float, float] = None, 
-                            show: bool = True,
-                            cbar_kw: Dict = None ,
-                            imgshow_kw: Dict = None):
+
+def plot_association_matrix(
+    assoc_mat: pd.DataFrame,
+    suffix_dic: Dict[str, str] = None,
+    ax: matplotlib.axes.Axes = None,
+    cmap: str = "coolwarm",
+    cbarlabel: str = None,
+    figsize: Tuple[float, float] = None,
+    show: bool = True,
+    cbar_kw: Dict = None,
+    imgshow_kw: Dict = None,
+):
     # default size if None
     if figsize is None:
         ncol = len(assoc_mat)
-        figsize = (ncol/2.5, ncol/2.5) 
-    
+        figsize = (ncol / 2.5, ncol / 2.5)
+
     # provide default to the figure
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
         fig = ax.get_figure()
     assoc_mat = cluster_sq_matrix(assoc_mat)
-    
+
     # provide default to imshow
     if imgshow_kw is None:
-        imgshow_kw = {'vmin': -1, 'vmax': 1}
-    
+        imgshow_kw = {"vmin": -1, "vmax": 1}
+
     # provide default to the colorbar
     if cbar_kw is None:
-        cbar_kw = {'ticks':[-1, -0.5, 0, 0.5, 1]}
-    
+        cbar_kw = {"ticks": [-1, -0.5, 0, 0.5, 1]}
+
     # rename the columns for keeping track of num vs cat columns
     if suffix_dic is not None:
-        rename_dic = {c: f"{c}_{suffix_dic[c]}"for c in assoc_mat.columns}
+        rename_dic = {c: f"{c}_{suffix_dic[c]}" for c in assoc_mat.columns}
         assoc_mat = assoc_mat.rename(columns=rename_dic)
         assoc_mat = assoc_mat.rename(index=rename_dic)
-    
-    im, cbar = heatmap(assoc_mat.values, 
-                       assoc_mat.columns, 
-                       assoc_mat.columns, 
-                       ax=ax,
-                       cmap=cmap, 
-                       cbarlabel=cbarlabel, 
-                       cbar_kw=cbar_kw, 
-                       **imgshow_kw)
-    
-    texts = annotate_heatmap(im, 
-                             valfmt="{x:.1f}", 
-                             textcolors=("white", "black")
-                             )
+
+    im, cbar = heatmap(
+        assoc_mat.values,
+        assoc_mat.columns,
+        assoc_mat.columns,
+        ax=ax,
+        cmap=cmap,
+        cbarlabel=cbarlabel,
+        cbar_kw=cbar_kw,
+        **imgshow_kw,
+    )
+
+    texts = annotate_heatmap(
+        im, valfmt="{x:.1f}", textcolors=("white", "black")
+    )
 
     fig.tight_layout()
     if show:

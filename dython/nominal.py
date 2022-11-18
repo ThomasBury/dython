@@ -2345,6 +2345,242 @@ def xy_to_matrix(xy: pd.DataFrame):
     )
 
 
+###############
+# visualization
+###############
+
+def cluster_sq_matrix(sq_matrix: pd.DataFrame, method: str="ward"):
+    """
+    Apply agglomerative clustering in order to sort
+    a correlation matrix.
+
+    Based on https://github.com/TheLoneNut/CorrelationMatrixClustering/blob/master/CorrelationMatrixClustering.ipynb
+
+    Parameters:
+    -----------
+    corr_mat : 
+        a square correlation matrix (pandas DataFrame)
+    method :
+        linkage method, see https://docs.scipy.org/doc/scipy/reference/generated/scipy.cluster.hierarchy.linkage.html
+
+    Returns:
+    --------
+    sq_matrix : 
+        pd.DataFrame, a sorted square matrix
+
+    Example:
+    --------
+    >>> assoc = association_matrix(
+    ...     iris_df,
+    ...     plot=False
+    ... )
+    >>> assoc_clustered = cluster_sq_matrix(assoc, method="complete")
+    """
+    d = sch.distance.pdist(sq_matrix.values)
+    L = sch.linkage(d, method=method)
+    ind = sch.fcluster(L, 0.5 * d.max(), "distance")
+    columns = [sq_matrix.columns.tolist()[i] for i in list((np.argsort(ind)))]
+    sq_matrix = sq_matrix.reindex(columns, axis=1)
+    sq_matrix = sq_matrix.reindex(columns, axis=0)
+    return sq_matrix
+
+def heatmap(data, row_labels, col_labels, ax=None,
+            cbar_kw=None, cbarlabel="", **kwargs):
+    """
+    Create a heatmap from a numpy array and two lists of labels.
+
+    Parameters
+    ----------
+    data
+        A 2D numpy array of shape (M, N).
+    row_labels
+        A list or array of length M with the labels for the rows.
+    col_labels
+        A list or array of length N with the labels for the columns.
+    ax
+        A `matplotlib.axes.Axes` instance to which the heatmap is plotted.  If
+        not provided, use current axes or create a new one.  Optional.
+    cbar_kw
+        A dictionary with arguments to `matplotlib.Figure.colorbar`.  Optional.
+    cbarlabel
+        The label for the colorbar.  Optional.
+    **kwargs
+        All other arguments are forwarded to `imshow`.
+    """
+
+    if ax is None:
+        ax = plt.gca()
+
+    if cbar_kw is None:
+        cbar_kw = {}
+
+    # Plot the heatmap
+    im = ax.imshow(data, **kwargs)
+
+    # Create colorbar
+    divider = make_axes_locatable(ax)
+
+    ax_cb = divider.append_axes("right", size="5%", pad=0.05)
+    fig = ax.get_figure()
+    fig.add_axes(ax_cb)
+    
+    cbar = ax.figure.colorbar(im, cax=ax_cb, **cbar_kw)
+    cbar.ax.set_ylabel(cbarlabel, rotation=-90, va="bottom")
+
+    # Show all ticks and label them with the respective list entries.
+    ax.set_xticks(np.arange(data.shape[1]), labels=col_labels)
+    ax.set_yticks(np.arange(data.shape[0]), labels=row_labels)
+
+    # Let the horizontal axes labeling appear on top.
+    ax.tick_params(top=False, bottom=True,
+                   labeltop=False, labelbottom=True)
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=90, ha="right",
+             rotation_mode="anchor")
+
+    # Turn spines off and create white grid.
+    ax.spines[:].set_visible(False)
+
+    ax.set_xticks(np.arange(data.shape[1]+1)-.5, minor=True)
+    ax.set_yticks(np.arange(data.shape[0]+1)-.5, minor=True)
+    ax.grid(which="minor", color="w", linestyle='-', linewidth=2)
+    ax.tick_params(which="minor", bottom=False, left=False)
+
+    return im, cbar
+
+def create_dtype_dict(df: pd.DataFrame):
+    """create a custom dictionary of data type for adding suffixes
+    to column names in the plotting utility for association matrix
+    
+    Parameters
+    ----------
+    df : 
+        the dataframe used for computing the association matrix
+    """
+    cat_cols = list(df.select_dtypes(include=["object", "category", "bool"]))
+    num_cols = list(df.select_dtypes(include=[np.number]))
+    remaining_cols = set(df.columns) - set(cat_cols).union(set(num_cols))
+    
+    cat_dic = {c: 'cat' for c in cat_cols}
+    num_dic = {c: 'num' for c in num_cols}
+    remainder_dic = {c: 'unk' for c in remaining_cols}
+    return {**cat_dic, **num_dic, **remainder_dic}
+
+
+def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
+                     textcolors=("black", "white"),
+                     threshold=None, **textkw):
+    """
+    A function to annotate a heatmap.
+
+    Parameters
+    ----------
+    im
+        The AxesImage to be labeled.
+    data
+        Data used to annotate.  If None, the image's data is used.  Optional.
+    valfmt
+        The format of the annotations inside the heatmap.  This should either
+        use the string format method, e.g. "$ {x:.2f}", or be a
+        `matplotlib.ticker.Formatter`.  Optional.
+    textcolors
+        A pair of colors.  The first is used for values below a threshold,
+        the second for those above.  Optional.
+    threshold
+        Value in data units according to which the colors from textcolors are
+        applied.  If None (the default) uses the middle of the colormap as
+        separation.  Optional.
+    **kwargs
+        All other arguments are forwarded to each call to `text` used to create
+        the text labels.
+    """
+
+    if not isinstance(data, (list, np.ndarray)):
+        data = im.get_array()
+
+    # Normalize the threshold to the images color range.
+    if threshold is not None:
+        threshold = im.norm(threshold)
+    else:
+        threshold = im.norm(data.max())/2.
+
+    # Set default alignment to center, but allow it to be
+    # overwritten by textkw.
+    kw = dict(horizontalalignment="center",
+              verticalalignment="center")
+    kw.update(textkw)
+
+    # Get the formatter in case a string is supplied
+    if isinstance(valfmt, str):
+        valfmt = matplotlib.ticker.StrMethodFormatter(valfmt)
+
+    # Loop over the data and create a `Text` for each "pixel".
+    # Change the text's color depending on the data.
+    texts = []
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            kw.update(color=textcolors[int(im.norm(data[i, j]) > threshold)])
+            text = im.axes.text(j, i, valfmt(data[i, j], None), **kw)
+            texts.append(text)
+
+    return texts
+
+def plot_association_matrix(assoc_mat: pd.DataFrame,
+                            suffix_dic: Dict[str, str] = None,
+                            ax: matplotlib.axes.Axes = None, 
+                            cmap: str = 'coolwarm', 
+                            cbarlabel: str = None,
+                            figsize: Tuple[float, float] = None, 
+                            show: bool = True,
+                            cbar_kw: Dict = None ,
+                            imgshow_kw: Dict = None):
+    # default size if None
+    if figsize is None:
+        ncol = len(assoc_mat)
+        figsize = (ncol/2.5, ncol/2.5) 
+    
+    # provide default to the figure
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = ax.get_figure()
+    assoc_mat = cluster_sq_matrix(assoc_mat)
+    
+    # provide default to imshow
+    if imgshow_kw is None:
+        imgshow_kw = {'vmin': -1, 'vmax': 1}
+    
+    # provide default to the colorbar
+    if cbar_kw is None:
+        cbar_kw = {'ticks':[-1, -0.5, 0, 0.5, 1]}
+    
+    # rename the columns for keeping track of num vs cat columns
+    if suffix_dic is not None:
+        rename_dic = {c: f"{c}_{suffix_dic[c]}"for c in assoc_mat.columns}
+        assoc_mat = assoc_mat.rename(columns=rename_dic)
+        assoc_mat = assoc_mat.rename(index=rename_dic)
+    
+    im, cbar = heatmap(assoc_mat.values, 
+                       assoc_mat.columns, 
+                       assoc_mat.columns, 
+                       ax=ax,
+                       cmap=cmap, 
+                       cbarlabel=cbarlabel, 
+                       cbar_kw=cbar_kw, 
+                       **imgshow_kw)
+    
+    texts = annotate_heatmap(im, 
+                             valfmt="{x:.1f}", 
+                             textcolors=("white", "black")
+                             )
+
+    fig.tight_layout()
+    if show:
+        plt.show()
+    return fig, ax
+
+
 
 
 

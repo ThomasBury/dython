@@ -1,5 +1,11 @@
 # Change Log
 
+## 0.7.3
+* _Dython now officially supports only Python 3.8 or above_ (by-product of issue [#137](https://github.com/shakedzy/dython/issues/137))
+* Added `nominal.replot_last_associations`: a new method to replot `nominal.associations` heat-maps (issue [#136](https://github.com/shakedzy/dython/issues/136))
+* Adding option to drop NaN values in each pair of columns independently in `nominal.associations` (issue [#130](https://github.com/shakedzy/dython/issues/130), by **[@matbb](https://github.com/matbb)**)
+* Fixing issues [#139](https://github.com/shakedzy/dython/issues/139) and [#140](https://github.com/shakedzy/dython/issues/140) (by **[@enrir](https://github.com/enrir)**)
+
 ## 0.7.2
 * `nominal.associations` supports multi-core parallel processing (issue [#117](https://github.com/shakedzy/dython/issues/117), by **[@mahieyin-rahmun](https://github.com/mahieyin-rahmun)**)
 * Using Black for code formatting (issue [#133](https://github.com/shakedzy/dython/issues/133), by **[@mahieyin-rahmun](https://github.com/mahieyin-rahmun)**)

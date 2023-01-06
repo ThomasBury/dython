@@ -67,13 +67,25 @@ __all__ = [
     "numerical_encoding",
     "identify_nominal_columns",
     "identify_numeric_columns",
+    "numerical_encoding",
+    "replot_last_associations",
+    "theils_u",
 ]
 
 _REPLACE = "replace"
 _DROP_SAMPLES = "drop_samples"
 _DROP_FEATURES = "drop_features"
+_DROP_SAMPLE_PAIRS = "drop_sample_pairs"
+_SKIP = "skip"
 _DEFAULT_REPLACE_VALUE = 0.0
 _PRECISION = 1e-13
+
+_ASSOC_PLOT_PARAMS = dict()
+
+_NO_OP = "no-op"
+_SINGLE_VALUE_COLUMN_OP = "single-value-column-op"
+_I_EQ_J_OP = "i-equal-j-op"
+_ASSOC_OP = "assoc-op"
 
 
 def _inf_nan_str(x):
